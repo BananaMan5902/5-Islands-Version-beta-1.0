@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Five Islands</title>
+<style>
+:root{--panel:rgba(12,28,44,.82);--ink:#f6eed9;--gold:#e9b44c;--red:#d8523c;color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html,body{height:100%;margin:0;background:#0b2a44;overflow:hidden;font-family:Georgia,"Times New Roman",serif;color:var(--ink)}
+canvas{display:block}
+.p{position:fixed;background:var(--panel);border-radius:10px;padding:10px 14px;font-size:14px;line-height:1.5}
+#hud{left:12px;top:calc(12px + env(safe-area-inset-top,0px));min-width:210px}
+#mini{right:12px;top:calc(12px + env(safe-area-inset-top,0px));padding:6px}
+#help{left:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));font-size:12px;max-width:60vw}
+#xh{position:fixed;left:50%;top:50%;width:6px;height:6px;margin:-3px;border-radius:50%;background:rgba(255,255,255,.85);pointer-events:none}
+#msg{left:50%;transform:translateX(-50%);bottom:calc(60px + env(safe-area-inset-bottom,0px));text-align:center;display:none;max-width:80vw}
+#shop{left:50%;top:50%;transform:translate(-50%,-50%);display:none;width:min(560px,92vw);max-height:84vh;overflow:auto;padding:16px 20px}
+#shop h2{margin:0 0 4px;color:var(--gold)} #shop h3{margin:14px 0 4px;font-size:15px;color:var(--gold)}
+.r{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.12)}
+button{font:inherit;background:var(--gold);color:#241707;border:0;border-radius:6px;padding:4px 12px;cursor:pointer;white-space:nowrap}
+button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.bar{height:8px;background:rgba(255,255,255,.2);border-radius:4px;overflow:hidden;margin:2px 0 6px}
+#hp{height:100%;background:#58b368;width:100%}
+</style></head><body>
+<div id="hud" class="p"></div>
+<div id="mini" class="p"><canvas id="mc" width="150" height="150"></canvas></div>
+<div id="help" class="p">Click the game to capture the mouse · WASD walk the deck · F at the wheel to steer with WASD · F at a cannon, look to aim, click or Space fires every cannon · 1–3 ammo · E market when docked · G ashore or back aboard</div>
+<div id="xh"></div><div id="msg" class="p"></div>
+<div id="shop" class="p"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const SH={sloop:{n:"Sloop",hp:100,spd:9,cn:3,cost:0},brig:{n:"Brigantine",hp:200,spd:8,cn:5,cost:400},frig:{n:"Frigate",hp:350,spd:7,cn:7,cost:1200},gal:{n:"Galleon",hp:600,spd:6,cn:10,cost:3000}};
+const AM={iron:{n:"Iron ball",dmg:10,r:3.5,cost:2,col:0x222222},heavy:{n:"Heavy ball",dmg:22,r:4.5,cost:5,col:0x6b4a2a},fire:{n:"Explosive shell",dmg:40,r:8,cost:12,col:0xff6a1a}};
+const ISL=[{n:"Harbor Market",x:0,z:0,r:20,shop:1},
+{n:"Rum Isle",x:-280,z:-280,r:24,p:"Rum",v:40,c:0xb5651d},{n:"Spice Cove",x:280,z:-280,r:24,p:"Spice",v:60,c:0xc0392b},
+{n:"Silk Bay",x:-280,z:280,r:24,p:"Silk",v:80,c:0x8e44ad},{n:"Gold Rock",x:280,z:280,r:24,p:"Gold",v:110,c:0xf1c40f}];
+const R=new THREE.WebGLRenderer({antialias:true});R.setSize(innerWidth,innerHeight);R.setPixelRatio(Math.min(devicePixelRatio,2));document.body.prepend(R.domElement);
+const sc=new THREE.Scene();sc.background=new THREE.Color(0x9fd3ee);sc.fog=new THREE.Fog(0x9fd3ee,200,800);
+const cam=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,.5,1500);
+sc.add(new THREE.AmbientLight(0xffffff,.75));const sun=new THREE.DirectionalLight(0xffffff,.8);sun.position.set(50,100,30);sc.add(sun);
+function tex(k,rep){const cv=document.createElement("canvas");cv.width=cv.height=128;const x=cv.getContext("2d"),q=Math.random;x.fillStyle=k=="sea"?"#c8d8e0":"#fff";x.fillRect(0,0,128,128);
+ if(k=="wood"){x.fillStyle="rgba(60,30,10,.35)";for(let i=0;i<8;i++)x.fillRect(0,i*16,128,2);for(let i=0;i<60;i++){x.fillStyle="rgba(70,40,15,"+(.1+q()*.2)+")";x.fillRect(q()*128,q()*128,8+q()*30,1)}for(let i=0;i<8;i++){x.fillStyle="rgba(50,25,10,.4)";x.fillRect(q()*128,i*16,2,16)}}
+ else if(k=="cloth"){x.fillStyle="rgba(0,0,0,.1)";for(let i=0;i<128;i+=4){x.fillRect(i,0,1,128);x.fillRect(0,i,128,1)}}
+ else if(k=="sea"){x.strokeStyle="rgba(255,255,255,.7)";x.lineWidth=2;for(let i=0;i<14;i++){x.beginPath();x.arc(q()*128,q()*128,6+q()*8,3.6,5.8);x.stroke()}}
+ else{for(let i=0;i<700;i++){x.fillStyle="rgba(0,0,0,"+(.05+q()*.12)+")";x.fillRect(q()*128,q()*128,1+q()*3,1+q()*3)}}
+ const t=new THREE.CanvasTexture(cv);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(rep,rep);return t}
+const TXS=tex("sea",150);
+const sea=new THREE.Mesh(new THREE.PlaneGeometry(2600,2600),new THREE.MeshLambertMaterial({color:0x1b6f9c,map:TXS}));sea.rotation.x=-Math.PI/2;sc.add(sea);
+const grid=new THREE.GridHelper(2600,260,0x5fb7de,0x5fb7de);grid.material.transparent=true;grid.material.opacity=.25;grid.position.y=.05;sc.add(grid);
+const TX={},WD=tex("wood",1),CL=tex("cloth",1),SD=tex("sand",3);
+[0x8a5a2b,0x4a3220,0xcaa56a,0xb8935a,0xb5651d,0xc0392b,0x8e44ad,0xf1c40f,0x222222].forEach(c=>TX[c]=WD);[0xf4efe0,0x111111].forEach(c=>TX[c]=CL);TX[0x24407a]=WD;[0xe3cf96,0x6aa84f,0x4f7f3a,0x2d6a2d].forEach(c=>TX[c]=SD);
+const mat=c=>{const m=new THREE.MeshLambertMaterial({color:c});if(TX[c])m.map=TX[c];return m};
+const box=(w,h,d,c,x=0,y=0,z=0)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat(c));m.position.set(x,y,z);return m};
+const cyl=(a,b,h,c,x=0,y=0,z=0,s=16)=>{const m=new THREE.Mesh(new THREE.CylinderGeometry(a,b,h,s),mat(c));m.position.set(x,y,z);return m};
+function makeShip(t,hull,sail=0xf4efe0){const k=SH[t],g=new THREE.Group(),z=1+k.cn*.06,L=10*z,W=3.8*z;
+ g.add(box(W,1.6,L,hull,0,.8,0));g.add(box(W*.6,1.6,L*.22,hull,0,.8,L*.6));
+ g.add(cyl(.25,.3,10*z,0x4a3220,0,5*z,0,6));g.add(box(W*1.5,5*z,.2,sail,0,6.5*z,0));
+ g.cn=[];g.L=L;g.W=W;const wh=new THREE.Mesh(new THREE.TorusGeometry(.8,.12,6,14),mat(0x4a3220));wh.position.set(0,2.6,-L*.42);g.add(wh);g.add(box(.3,1.8,.3,0x4a3220,0,1.9,-L*.42));const rows=Math.ceil(k.cn/2);
+ for(let i=0;i<k.cn;i++){const sd=i%2?1:-1,row=Math.floor(i/2),zz=rows>1?-L*.4+L*.8*row/(rows-1):0;
+  const c=cyl(.28,.34,1.4,0x1a1a1a,sd*W/2,1.8,zz,8);c.rotation.z=Math.PI/2;g.add(c);g.cn.push(c)}
+ return g}
+const P={x:0,z:-38,h:0,v:0,type:"sloop",hp:100,gold:150,ammo:{iron:40,heavy:0,fire:0},sel:"iron",cd:0,cargo:{},owned:{sloop:1},open:0,mesh:null,ch:0,yaw:Math.PI,pit:-.1,mode:"walk",lx:0,lz:-1};
+function setShip(t){P.type=t;if(P.mesh)sc.remove(P.mesh);P.mesh=makeShip(t,0x8a5a2b);sc.add(P.mesh);P.lx=0;P.lz=-1;P.mode="walk";P.hp=SH[t].hp}
+setShip("sloop");
+const EN=[],PR=[],FX=[],RESP=[];
+const barG=new THREE.PlaneGeometry(6,.7);
+function mkBar(e){e.bar=new THREE.Mesh(barG,new THREE.MeshBasicMaterial({color:0xe04b3a,depthTest:false}));e.bar.renderOrder=9;sc.add(e.bar)}
+function spawn(s){s.clear=1;s.taken=0;s.t=0;s.crates.forEach(c=>c.visible=true);
+ for(let i=0;i<0;i++){const a=i*2.09+.5,x=s.x+Math.sin(a)*s.r*.55,z=s.z+Math.cos(a)*s.r*.55,m=new THREE.Group();
+  m.add(cyl(2,2.5,5,0x777777,0,6.5,0));m.add(cyl(2.7,2.7,1,0x333333,0,9.2,0));const c=cyl(.4,.5,2.4,0x111111,0,9.9,1.4,8);c.rotation.x=Math.PI/2;m.add(c);
+  m.position.set(x,0,z);sc.add(m);const e={k:"fort",x,z,hp:70,max:70,cd:2+Math.random()*3,isl:s,m,rad:4,dmg:10,rng:60};mkBar(e);EN.push(e)}
+ for(let i=0;i<4;i++)spawnShip(s)}
+function spawnShip(s){if(EN.filter(x=>x.isl==s&&x.k=="ship").length>=4)return;const m=makeShip("sloop",0x222222,0x111111),a=Math.random()*6.28,e={k:"ship",x:s.x+Math.sin(a)*(s.r+18),z:s.z+Math.cos(a)*(s.r+18),h:0,v:6,hp:55,max:55,cd:2,isl:s,m,rad:5,dmg:6,rng:50,pr:s.r+14+Math.random()*30};m.scale.setScalar(.85);sc.add(m);mkBar(e);EN.push(e)}
+ISL.forEach((s,i)=>{s.i=i;const g=new THREE.Group();g.position.set(s.x,0,s.z);
+ g.add(cyl(s.r*.82,s.r,3,0xe3cf96,0,1,0,28));g.add(cyl(s.r*.62,s.r*.82,2,s.shop?0x6aa84f:0x4f7f3a,0,3,0,28));
+ if(s.shop){g.add(box(9,5,9,0xcaa56a,0,6.5,0));g.add(cyl(0,7,3.5,0xa33a2a,0,11.5,0,4));g.add(box(5,3,5,0xb8935a,-8,5.5,6));g.add(cyl(.2,.2,9,0x4a3220,7,8.5,-5,6));g.add(box(3,1.6,.2,0xe9b44c,8.5,12,-5));
+  for(let k=0;k<3;k++)g.add(box(1.6,1.6,1.6,0x8a5a2b,4+k*2,4.8,7))}
+ else{for(let k=0;k<6;k++){const a=k*1.05,d=s.r*(.35+.2*(k%2));g.add(cyl(0,1.8,5,0x2d6a2d,Math.sin(a)*d,6,Math.cos(a)*d,6))}
+  s.crates=[];for(let k=0;k<4;k++){const a=k*1.57+.7,c=box(2.2,2.2,2.2,s.c,s.x+Math.sin(a)*s.r*.25,4.6,s.z+Math.cos(a)*s.r*.25);c.position.set(Math.sin(a)*s.r*.25,4.6,Math.cos(a)*s.r*.25);g.add(c);s.crates.push(c)}}
+ sc.add(g);if(!s.shop)spawn(s)});
+const ring=new THREE.Mesh(new THREE.RingGeometry(2.6,3.2,32),new THREE.MeshBasicMaterial({color:0xffd24a,side:THREE.DoubleSide,transparent:true,opacity:.9}));ring.rotation.x=-Math.PI/2;ring.position.y=.2;sc.add(ring);
+const K={},ndc=new THREE.Vector2(),ray=new THREE.Raycaster(),plane=new THREE.Plane(new THREE.Vector3(0,1,0),0),aim={x:0,z:20},MAXR=75;
+const bg=new THREE.SphereGeometry(.25,8,8);
+function shoot(f,to,own,dmg,r,col){const T=1.2,g=30;const m=new THREE.Mesh(bg,mat(col));m.position.copy(f);sc.add(m);
+ PR.push({m,vx:(to.x-f.x)/T,vz:(to.z-f.z)/T,vy:-f.y/T+.5*g*T,own,dmg,r})}
+function splash(p,r,col){const m=new THREE.Mesh(new THREE.SphereGeometry(1,10,8),new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:.7}));m.position.set(p.x,.5,p.z);m.scale.setScalar(r*.4);sc.add(m);FX.push({m,t:0,r})}
+function kill(e){e.dead=1;sc.remove(e.bar);if(e.k=="ship"){sc.remove(e.m);if(e.fac!="navy")RESP.push({s:e.isl,t:12})}else{e.m.scale.y=.3;}
+ EN.splice(EN.indexOf(e),1);const s=e.isl;if(e.k=="fort"&&!EN.some(x=>x.isl==s&&x.k=="fort")){s.clear=1;P.gold+=50;msg(s.n+" is free of pirates (+50g). Sail close to claim the "+s.p+".")}}
+function nearest(e,fac,r){let b=null,bd=r;for(const o of EN)if(o.k=="ship"&&(o.fac||"pirate")==fac){const d=Math.hypot(o.x-e.x,o.z-e.z);if(d<bd){bd=d;b=o}}return b}
+function spawnNavy(){for(let i=0;i<2;i++){const sd=Math.random()<.5?-1:1,x=sd*440,z=(Math.random()-.5)*600+i*30,m=makeShip("brig",0x24407a),e={k:"ship",fac:"navy",x,z,h:Math.atan2(-x,-z),v:6,spd:7,hp:160,max:160,cd:2+i,m,rad:6,dmg:9,rng:60,life:80};sc.add(m);mkBar(e);e.bar.material.color.set(0x4aa3ff);EN.push(e)}msg("A Navy squadron has arrived to hunt pirates.")}
+function pickWp(){if(Math.random()<.3)return{x:(Math.random()-.5)*900,z:(Math.random()-.5)*900};const s=ISL[Math.floor(Math.random()*5)],a=Math.random()*6.28,r=s.r+22+Math.random()*40;return{x:s.x+Math.sin(a)*r,z:s.z+Math.cos(a)*r}}
+function landing(){if(P.mode=="land"){if(Math.hypot(P.wx-P.x,P.wz-P.z)<16){P.mode="walk";P.lx=0;P.lz=-1;P.yaw=P.h+Math.PI;msg("Back aboard.")}else msg("Your ship is too far away. Walk back to the shore.");return}
+ if(P.mode!="walk")return;const s=ISL.find(s=>Math.hypot(P.x-s.x,P.z-s.z)<s.r+12);if(!s){msg("Sail right up to an island, then press G to go ashore.");return}
+ const dx=P.x-s.x,dz=P.z-s.z,d=Math.hypot(dx,dz)||1;P.wx=s.x+dx/d*s.r*.75;P.wz=s.z+dz/d*s.r*.75;P.isl=s;P.mode="land";P.v=0;msg(s.shop?"Ashore at the market. Press G near your ship to board.":"Ashore. Walk to the crates in the middle of the island.")}
+function interact(){if(P.mode=="land")return;if(P.mode!="walk"){P.mode="walk";return}const m=P.mesh;
+ if(Math.hypot(P.lx,P.lz+m.L*.42)<3){P.mode="helm";P.lx=0;P.lz=-m.L*.42+1.3;msg("At the helm: W/S sail, A/D turn. F to step away.");return}
+ if(m.cn.some(c=>Math.hypot(P.lx-c.position.x,P.lz-c.position.z)<3)){P.mode="gun";msg("Manning the cannons: look to aim, click to fire them all. F to step away.");return}
+ msg("Stand beside the wheel at the stern or next to a cannon, then press F.")}
+function fire(){if(P.open||P.cd>0)return;if(P.mode!="gun"){msg("Walk to a cannon and press F to man the guns.");return}const k=SH[P.type],b=AM[P.sel],n=Math.min(k.cn,P.ammo[P.sel]);
+ if(n<1){msg("Out of "+b.n+"s. Press 1–3 to switch or buy more at the market.");return}
+ P.ammo[P.sel]-=n;P.cd=2.2;P.mesh.updateMatrixWorld(true);
+ for(let i=0;i<n;i++){const f=new THREE.Vector3();P.mesh.cn[i].getWorldPosition(f);const a=Math.random()*6.28,q=Math.random()*3;
+  shoot(f,{x:aim.x+Math.cos(a)*q,z:aim.z+Math.sin(a)*q},"p",b.dmg,b.r,b.col)}}
+R.domElement.addEventListener("mousedown",e=>{if(document.pointerLockElement!=R.domElement){if(!P.open)R.domElement.requestPointerLock();return}if(e.button==0)fire()});
+addEventListener("mousemove",e=>{if(document.pointerLockElement==R.domElement){P.yaw-=e.movementX*.0025;P.pit=Math.max(-1.3,Math.min(1.3,P.pit-e.movementY*.0025))}});
+addEventListener("keydown",e=>{K[e.code]=1;if(e.code=="Space"){e.preventDefault();fire()}
+ const n={Digit1:"iron",Digit2:"heavy",Digit3:"fire"}[e.code];if(n&&P.ammo[n]>0)P.sel=n;
+ if(e.code=="KeyG"&&!P.open)landing();if(e.code=="KeyF"&&!P.open)interact();if(e.code=="KeyE"||e.code=="Escape"){if(P.open||(e.code=="KeyE"&&docked())){P.open=!P.open;if(P.open)document.exitPointerLock();renderShop()}}});
+addEventListener("keyup",e=>K[e.code]=0);
+addEventListener("resize",()=>{R.setSize(innerWidth,innerHeight);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix()});
+const docked=()=>Math.hypot(P.x,P.z)<36;
+let mt=0;function msg(t){const m=$("msg");m.textContent=t;m.style.display="block";mt=5}
+function renderShop(){const el=$("shop");if(!P.open){el.style.display="none";return}
+ let h=`<h2>Harbor Market</h2><div>Gold: ${P.gold}</div><h3>Ships</h3>`;
+ for(const t in SH){const k=SH[t];h+=`<div class=r><span>${k.n}: hull ${k.hp}, ${k.cn} cannons, speed ${k.spd}</span>`+(t==P.type?"<b>Current</b>":P.owned[t]?`<button data-a="eq:${t}">Equip</button>`:`<button data-a="bs:${t}">Buy ${k.cost}g</button>`)+"</div>"}
+ h+="<h3>Cannonballs (pack of 20)</h3>";
+ for(const t in AM){h+=`<div class=r><span>${AM[t].n}: ${AM[t].dmg} damage, blast ${AM[t].r}. You have ${P.ammo[t]}</span><button data-a="ba:${t}">Buy ${AM[t].cost*20}g</button></div>`}
+ const mx=SH[P.type].hp,rc=Math.ceil((mx-P.hp)/2);
+ h+=`<h3>Repairs</h3><div class=r><span>Hull ${Math.ceil(P.hp)} / ${mx}</span><button data-a="rp">Repair ${rc}g</button></div><p><button data-a="x">Set sail (E)</button></p>`;
+ el.innerHTML=h;el.style.display="block"}
+$("shop").addEventListener("click",e=>{const a=e.target.dataset.a;if(!a)return;const[c,t]=a.split(":");
+ if(c=="x")P.open=0;
+ if(c=="eq"){setShip(t)}
+ if(c=="bs"&&P.gold>=SH[t].cost){P.gold-=SH[t].cost;P.owned[t]=1;setShip(t)}
+ if(c=="ba"&&P.gold>=AM[t].cost*20){P.gold-=AM[t].cost*20;P.ammo[t]+=20}
+ if(c=="rp"){const rc=Math.ceil((SH[P.type].hp-P.hp)/2);if(P.gold>=rc){P.gold-=rc;P.hp=SH[P.type].hp}}
+ renderShop()});
+function coll(o,pad){for(const s of ISL){const dx=o.x-s.x,dz=o.z-s.z,d=Math.hypot(dx,dz)||.01,m=s.r+pad;if(d<m){o.x=s.x+dx/d*m;o.z=s.z+dz/d*m;if(o.v)o.v*=.6}}}
+function steer(e,tx,tz,dt){let a=Math.atan2(tx-e.x,tz-e.z)-e.h;a=Math.atan2(Math.sin(a),Math.cos(a));e.h+=Math.max(-1,Math.min(1,a*2))*dt}
+function enemyShot(e,n,t){t=t||{x:P.x,z:P.z,pl:1};const lead=1.2,tx=t.x+(t.pl?Math.sin(P.h)*P.v*lead:Math.sin(t.h)*6*lead),tz=t.z+(t.pl?Math.cos(P.h)*P.v*lead:Math.cos(t.h)*6*lead),d=Math.hypot(tx-e.x,tz-e.z),j=3+d*.07;
+ for(let i=0;i<n;i++)shoot(new THREE.Vector3(e.x,e.k=="fort"?10:3,e.z),{x:tx+(Math.random()-.5)*2*j,z:tz+(Math.random()-.5)*2*j},e.fac=="navy"?"n":"e",e.dmg,3,e.fac=="navy"?0xdddddd:0x111111)}
+const mc=$("mc").getContext("2d");
+function minimap(){mc.clearRect(0,0,150,150);mc.fillStyle="#1b6f9c";mc.fillRect(0,0,150,150);const f=150/760,X=x=>75+x*f,Z=z=>75-z*f;
+ for(const s of ISL){mc.fillStyle=s.shop?"#e9b44c":(s.clear?"#5fa05a":"#c0463a");mc.beginPath();mc.arc(X(s.x),Z(s.z),s.r*f,0,7);mc.fill()}
+ for(const e of EN)if(e.k=="ship"){mc.fillStyle=e.fac=="navy"?"#4aa3ff":"#ff3b2f";mc.fillRect(X(e.x)-2,Z(e.z)-2,4,4)}
+ mc.save();mc.translate(X(P.x),Z(P.z));mc.rotate(P.h);mc.fillStyle="#fff";mc.beginPath();mc.moveTo(0,-6);mc.lineTo(4,5);mc.lineTo(-4,5);mc.fill();mc.restore()}
+let last=performance.now(),T=0;
+function frame(now){requestAnimationFrame(frame);const dt=Math.min(.05,(now-last)/1000);last=now;T+=dt;
+ const k=SH[P.type];P.cd=Math.max(0,P.cd-dt);
+ const oh=P.h;if(!P.open&&P.mode=="helm"){if(K.KeyW)P.v=Math.min(k.spd,P.v+6*dt);else if(K.KeyS)P.v=Math.max(-k.spd*.3,P.v-8*dt);else P.v*=1-.4*dt;
+  P.h+=((K.KeyA?1:0)-(K.KeyD?1:0))*dt*Math.min(1,Math.abs(P.v)/3)}else P.v*=1-.3*dt;P.yaw+=P.h-oh;
+ if(!P.open&&P.mode=="walk"){const fw=(K.KeyW?1:0)-(K.KeyS?1:0),st=(K.KeyD?1:0)-(K.KeyA?1:0),sp=4*dt,dx=(-Math.sin(P.yaw)*fw+Math.cos(P.yaw)*st)*sp,dz=(-Math.cos(P.yaw)*fw-Math.sin(P.yaw)*st)*sp,c=Math.cos(P.h),s=Math.sin(P.h),m=P.mesh;
+  P.lx=Math.max(-m.W/2+.3,Math.min(m.W/2-.3,P.lx+dx*c-dz*s));P.lz=Math.max(-m.L/2+.3,Math.min(m.L/2-.3,P.lz+dx*s+dz*c))}
+ P.x+=Math.sin(P.h)*P.v*dt;P.z+=Math.cos(P.h)*P.v*dt;coll(P,3);P.x=Math.max(-480,Math.min(480,P.x));P.z=Math.max(-480,Math.min(480,P.z));
+ P.mesh.position.set(P.x,Math.sin(T*2)*.2,P.z);P.mesh.rotation.set(0,P.h,Math.sin(T*1.5)*.03);
+ P.ch+=(P.h-P.ch)*Math.min(1,dt*3);
+ {const c=Math.cos(P.h),s=Math.sin(P.h);cam.rotation.order="YXZ";if(P.mode=="land"){const I=P.isl;if(!P.open){const fw=(K.KeyW?1:0)-(K.KeyS?1:0),st=(K.KeyD?1:0)-(K.KeyA?1:0),sp=6*dt;P.wx+=(-Math.sin(P.yaw)*fw+Math.cos(P.yaw)*st)*sp;P.wz+=(-Math.cos(P.yaw)*fw-Math.sin(P.yaw)*st)*sp}
+ let dx=P.wx-I.x,dz=P.wz-I.z,d=Math.hypot(dx,dz)||.01;if(d>I.r*.78){P.wx=I.x+dx/d*I.r*.78;P.wz=I.z+dz/d*I.r*.78;d=I.r*.78}
+ cam.position.set(P.wx,(d<I.r*.62?4:4-2*(d-I.r*.62)/(I.r*.2))+1.7,P.wz)}else cam.position.set(P.x+P.lx*c+P.lz*s,3.6+Math.sin(T*2)*.2,P.z-P.lx*s+P.lz*c);cam.rotation.set(P.pit,P.yaw,0)}
+ ray.setFromCamera(ndc,cam);const pt=new THREE.Vector3();if(!ray.ray.intersectPlane(plane,pt))pt.copy(ray.ray.direction).multiplyScalar(300).add(cam.position);
+ let dx=pt.x-P.x,dz=pt.z-P.z,d=Math.hypot(dx,dz),far=d>MAXR;if(far){dx*=MAXR/d;dz*=MAXR/d}
+ aim.x=P.x+dx;aim.z=P.z+dz;ring.position.x=aim.x;ring.position.z=aim.z;ring.material.color.set(far?0xff6a4a:0xffd24a);ring.scale.setScalar(P.cd>0?.7:1);ring.visible=P.mode=="gun";
+ // enemies
+ for(const e of EN){e.cd-=dt;const pd=Math.hypot(P.x-e.x,P.z-e.z);
+  if(e.k=="ship"){const s=e.isl;if(e.fac=="navy"){const t=nearest(e,"pirate",999);e.life-=dt;if(t&&e.life>0){const an=Math.atan2(t.x-e.x,t.z-e.z)+(Math.hypot(t.x-e.x,t.z-e.z)<30?1.3:0);steer(e,e.x+Math.sin(an)*20,e.z+Math.cos(an)*20,dt)}else{steer(e,0,-60,dt);if(e.life<-40||Math.hypot(e.x,e.z+60)<30){sc.remove(e.m,e.bar);EN.splice(EN.indexOf(e),1);continue}}}
+   else{if(!e.wp||Math.hypot(e.wp.x-e.x,e.wp.z-e.z)<25||(e.wt-=dt)<0){e.wp=pickWp();e.wt=40}steer(e,e.wp.x,e.wp.z,dt)}
+   e.x+=Math.sin(e.h)*(e.spd||6)*dt;e.z+=Math.cos(e.h)*(e.spd||6)*dt;coll(e,3);e.m.position.set(e.x,Math.sin(T*2+e.x)*.2,e.z);e.m.rotation.y=e.h}
+  if(e.k=="ship"&&e.cd<=0){const t=e.fac=="navy"?nearest(e,"pirate",e.rng):((pd<e.rng&&!P.open)?{x:P.x,z:P.z,pl:1}:nearest(e,"navy",e.rng));if(t){e.cd=3;enemyShot(e,e.fac=="navy"?3:2,t)}}
+  e.bar.position.set(e.x,e.k=="fort"?13:11,e.z);e.bar.quaternion.copy(cam.quaternion);e.bar.scale.x=Math.max(.02,e.hp/e.max)}
+ // projectiles
+ for(let i=PR.length-1;i>=0;i--){const p=PR[i];p.vy-=30*dt;p.m.position.x+=p.vx*dt;p.m.position.y+=p.vy*dt;p.m.position.z+=p.vz*dt;
+  if(p.m.position.y<.3){const q=p.m.position;splash(q,p.r,p.r>6?0xff8a2a:0xffffff);
+   if(p.own!="e"){for(const e of EN.slice())if(e.fac!="navy"&&Math.hypot(e.x-q.x,e.z-q.z)<p.r+e.rad){e.hp-=p.dmg;if(e.hp<=0)kill(e)}}
+   else{if(Math.hypot(P.x-q.x,P.z-q.z)<p.r+4)P.hp-=p.dmg;for(const e of EN.slice())if(e.fac=="navy"&&Math.hypot(e.x-q.x,e.z-q.z)<p.r+e.rad){e.hp-=p.dmg;if(e.hp<=0)kill(e)}}
+   sc.remove(p.m);PR.splice(i,1)}}
+ for(let i=FX.length-1;i>=0;i--){const f=FX[i];f.t+=dt;f.m.scale.setScalar(f.r*(.4+f.t*1.6));f.m.material.opacity=.7-f.t*1.6;if(f.t>.43){sc.remove(f.m);FX.splice(i,1)}}
+ // islands
+ for(let i=RESP.length-1;i>=0;i--){RESP[i].t-=dt;if(RESP[i].t<=0){spawnShip(RESP[i].s);RESP.splice(i,1)}}
+ navyT=(window.navyT==null?40:window.navyT)-dt;window.navyT=navyT;if(navyT<=0){window.navyT=70+Math.random()*50;if(EN.filter(x=>x.fac=="navy").length<2)spawnNavy()}
+ P.hc=(P.hc==null?6:P.hc)-dt;if(P.hc<=0&&!P.open){const t=nearest(P,"pirate",65);P.hc=5+Math.random()*4;if(t){P.mesh.updateMatrixWorld(true);const f=new THREE.Vector3();for(let i=0;i<SH[P.type].cn;i++){P.mesh.cn[i].getWorldPosition(f);const a=Math.random()*6.28,r=Math.random()*3.5;shoot(f,{x:t.x+Math.sin(t.h)*7+Math.cos(a)*r,z:t.z+Math.cos(t.h)*7+Math.sin(a)*r},"p",10,3.5,0x222222)}msg("Your gunner opens fire!")}}
+ let near=null;
+ for(const s of ISL){if(s.shop)continue;const d=Math.hypot(P.x-s.x,P.z-s.z);
+  if(s.clear&&!s.taken&&P.mode=="land"&&P.isl==s&&Math.hypot(P.wx-s.x,P.wz-s.z)<s.r*.45){s.taken=1;s.crates.forEach(c=>c.visible=false);P.cargo[s.p]=(P.cargo[s.p]||0)+4;msg("Loaded 4 crates of "+s.p+". Sell them at the market.")}
+  if(s.clear&&s.taken){s.t+=dt;if(s.t>45)spawn(s)}
+  if(d<s.r+60)near=s}
+ if(docked()){let g=0;for(const p in P.cargo){const isl=ISL.find(s=>s.p==p);g+=P.cargo[p]*isl.v}if(g){P.gold+=g;P.cargo={};msg("Sold your cargo for "+g+" gold.")}}
+ if(P.hp<=0){P.gold=Math.floor(P.gold*.8);P.cargo={};P.x=0;P.z=-38;P.h=0;P.ch=0;P.v=0;P.mode="walk";P.lx=0;P.lz=-1;P.hp=k.hp;msg("Your ship sank. You lost your cargo and 20% of your gold.")}
+ if(mt>0){mt-=dt;if(mt<=0)$("msg").style.display="none"}
+ const cg=Object.keys(P.cargo).map(p=>p+" x"+P.cargo[p]).join(", ")||"empty";
+ $("hud").innerHTML=`<b>${k.n}</b> · hull ${Math.max(0,Math.ceil(P.hp))}/${k.hp}<div class=bar><div id=hp style="width:${Math.max(0,P.hp/k.hp*100)}%"></div></div>`+
+  `Gold: <b style="color:var(--gold)">${P.gold}</b><br>Ammo: ${AM[P.sel].n} x${P.ammo[P.sel]} (${P.cd>0?"reloading":"ready"})<br>Cannons: ${k.cn} · Cargo: ${cg}`+
+  (near?`<br>${near.n}: ${near.clear?(near.taken?"respawning":"loot ready (press G to go ashore)"):EN.filter(e=>e.isl==near).length+" defenders left"}`:"")+(docked()?"<br><b>Docked: press E for the market</b>":"")+"<br>Station: "+{walk:"on deck (F near wheel or cannon)",helm:"at the helm (F to leave)",gun:"at the cannons (F to leave)",land:"ashore (G near your ship to board)"}[P.mode]+(document.pointerLockElement?"":"<br><i>Click the game to capture the mouse</i>");
+ minimap();R.render(sc,cam)}
+requestAnimationFrame(frame);
+</script></body></html>
